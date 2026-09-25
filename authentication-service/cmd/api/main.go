@@ -44,6 +44,7 @@ func connectToDB() *sql.DB {
 	for {
 		connection, err := openDBConn(dsn)
 		if err != nil {
+			log.Println("err", err)
 			log.Println("Postgrest not yet ready...")
 			dbConnRetryCount++
 		} else {
