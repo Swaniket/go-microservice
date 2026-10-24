@@ -7,6 +7,7 @@ import (
 	"net/http"
 )
 
+// The internal requests to every MS will have this type of payload
 type RequestPayload struct {
 	Action string      `json:"action"`
 	Auth   AuthPayload `json:"auth,omitempty"`
@@ -35,9 +36,10 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// We will have cases based on the action provided
 	switch requestPayload.Action {
 	case "auth":
-
+		app.authenticate(w, requestPayload.Auth)
 	default:
 		app.errorJson(w, errors.New("Unknown action"))
 	}
@@ -48,7 +50,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	jsonData, _ := json.MarshalIndent(a, "", "\t")
 
 	// Call the MS
-	request, err := http.NewRequest("POST", "http://authetication-service/authenticate", bytes.NewBuffer(jsonData)) // Put the URL in the env file
+	request, err := http.NewRequest("POST", "http://authentication-service/authenticate", bytes.NewBuffer(jsonData)) // Put the URL in the env file
 	if err != nil {
 		app.errorJson(w, err)
 		return
@@ -63,4 +65,34 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 	defer response.Body.Close()
 
 	// Make sure we get back the correct status code
+	if response.StatusCode == http.StatusUnauthorized {
+		app.errorJson(w, errors.New("invalid credentials"))
+		return
+	} else if response.StatusCode != http.StatusAccepted {
+		app.errorJson(w, errors.New("error calling auth service"))
+		return
+	}
+
+	// Read the body sent from the MS
+	var jsonFromService jsonResponse
+
+	// Decode the json from auth service
+	err = json.NewDecoder(response.Body).Decode(&jsonFromService)
+	if err != nil {
+		app.errorJson(w, err)
+		return
+	}
+
+	if jsonFromService.Error {
+		app.errorJson(w, err, http.StatusUnauthorized)
+		return
+	}
+
+	// If we are here then it's a valid login
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "Authenticated!"
+	payload.Data = jsonFromService.Data
+
+	app.writeJson(w, http.StatusAccepted, payload)
 }
